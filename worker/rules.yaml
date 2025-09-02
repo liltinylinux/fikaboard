@@ -1,0 +1,13 @@
+xp:
+  KILL: 100
+  HEADSHOT: 25
+  SURVIVE: 150
+  EXTRACT: 75
+  DOGTAG: 30
+  DEATH: 0
+patterns:
+  KILL: "^(?P<ts>[^ ]+) .* KILL: (?P<killer>[^ ]+) -> (?P<victim>[^ ]+)(?: \\(HEADSHOT\\))?"
+  DEATH: "^(?P<ts>[^ ]+) .* DEATH: (?P<victim>[^ ]+) by (?P<killer>[^ ]+)"
+  EXTRACT: "^(?P<ts>[^ ]+) .* EXTRACT: (?P<name>[^ ]+)"
+  SURVIVE: "^(?P<ts>[^ ]+) .* SURVIVE: (?P<name>[^ ]+)"
+  DOGTAG: "^(?P<ts>[^ ]+) .* DOGTAG: (?P<name>[^ ]+) picked up"

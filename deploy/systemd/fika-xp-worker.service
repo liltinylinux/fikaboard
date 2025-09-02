@@ -1,0 +1,18 @@
+[Unit]
+Description=Fika XP Worker (log ingestor)
+After=network.target
+
+[Service]
+EnvironmentFile=/opt/fika_xp/.env
+Type=simple
+Environment=DB_PATH=/opt/fika_xp/fika.db
+Environment=LOG_FILE=/opt/spt/user/logs/server.log
+Environment=TIMEZONE=America/New_York
+WorkingDirectory=/opt/fika_xp
+ExecStart=/opt/fika_xp/venv/bin/python -m worker.log_ingestor
+Restart=always
+RestartSec=3
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target

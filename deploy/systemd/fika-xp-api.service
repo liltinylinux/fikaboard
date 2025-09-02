@@ -1,0 +1,20 @@
+[Unit]
+Description=Fika XP API (Discord OAuth + Quests)
+After=network.target
+
+[Service]
+EnvironmentFile=/opt/fika_xp/.env
+Type=simple
+Environment=DB_PATH=/opt/fika_xp/fika.db
+Environment=DISCORD_CLIENT_ID=xxxxx
+Environment=DISCORD_CLIENT_SECRET=xxxxx
+Environment=DISCORD_REDIRECT_URI=https://your.site/api/callback
+Environment=SITE_ORIGIN=https://your.site
+Environment=SESSION_SECRET=change-me
+WorkingDirectory=/opt/fika_xp
+ExecStart=/opt/fika_xp/venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8088
+Restart=always
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=Fika XP Discord Bot
+After=network.target
+
+[Service]
+EnvironmentFile=/opt/fika_xp/.env
+Type=simple
+Environment=DISCORD_TOKEN=REDACTED
+Environment=DB_PATH=/opt/fika_xp/fika.db
+Environment=LEADERBOARD_CHANNEL_ID=000000000000000000
+Environment=TIMEZONE=America/New_York
+WorkingDirectory=/opt/fika_xp
+ExecStart=/opt/fika_xp/venv/bin/python -m bot.main_example
+Restart=always
+RestartSec=3
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target
