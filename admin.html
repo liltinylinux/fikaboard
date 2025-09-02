@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fika XP — Admin</title>
+<style>
+  :root{--bg:#0d0f12;--panel:#0f141b;--panel2:#151b23;--text:#e7eef7;--muted:#8aa1bb;--brand:#3a86ff;--border:#1f2834;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial}
+  .container{max-width:1100px;margin:24px auto;padding:0 16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;margin:12px 0}
+  input,select,button,textarea{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px;border-bottom:1px solid var(--border);text-align:left}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Admin Console</h1>
+  <p class="muted" id="who"></p>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px">Create / Update Quest</h2>
+    <div class="row">
+      <input id="q_id" type="number" placeholder="id (optional for update)"/>
+      <input id="q_title" placeholder="title"/>
+      <input id="q_scope" placeholder="scope (daily|weekly|all)" />
+      <input id="q_goal" type="number" placeholder="goal"/>
+      <input id="q_xp" type="number" placeholder="xp"/>
+      <input id="q_metric" placeholder="metric (optional)"/>
+      <select id="q_active"><option value="1">active</option><option value="0">inactive</option></select>
+    </div>
+    <div class="row">
+      <button id="btnCreate">Create</button>
+      <button id="btnUpdate">Update</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px">Quests</h2>
+    <div class="row">
+      <select id="f_scope"><option value="all">all</option><option value="daily">daily</option><option value="weekly">weekly</option></select>
+      <button id="btnReload">Reload</button>
+    </div>
+    <table id="qt"><thead><tr>
+      <th>id</th><th>title</th><th>scope</th><th>goal</th><th>xp</th><th>active</th><th></th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px">Reset Player</h2>
+    <div class="row">
+      <input id="reset_uid" placeholder="discord_id to reset"/>
+      <button id="btnReset">Reset XP & quests</button>
+    </div>
+    <p class="muted">Resets user_xp, user_xp_ledger and clears user_quests.</p>
+  </div>
+</div>
+
+<script>
+const API_BASE = '/xp/api';
+
+async function mustBeAdmin() {
+  const r = await fetch(API_BASE+'/me', {credentials:'include'});
+  const me = await r.json();
+  if (!me || me.auth !== true) location.href = '/login.html';
+  if (!me.is_admin) { alert('Admin only'); location.href='/quests.html'; }
+  document.getElementById('who').textContent = `Signed in as ${me.username} (${me.discord_id})`;
+}
+function val(id){return document.getElementById(id).value;}
+
+async function loadQuests() {
+  const s = document.getElementById('f_scope').value;
+  const r = await fetch(`${API_BASE}/admin/quests?scope=${encodeURIComponent(s)}`, {credentials:'include'});
+  if(!r.ok){ alert('Failed to load quests'); return; }
+  const j = await r.json();
+  const tbody = document.querySelector('#qt tbody'); tbody.innerHTML='';
+  (j.quests||[]).forEach(q=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${q.id}</td><td>${escape(q.title||'')}</td><td>${escape(q.scope||'')}</td>
+      <td>${q.goal||0}</td><td>${q.xp||0}</td><td>${q.active? 'yes':'no'}</td>
+      <td><button data-del="${q.id}">Delete</button></td>`;
+    tr.querySelector('button').onclick = ()=>deleteQuest(q.id);
+    tbody.appendChild(tr);
+  });
+}
+
+async function createQuest(){
+  const body = {
+    title: val('q_title'), descr: '', scope: val('q_scope')||'daily',
+    goal: Number(val('q_goal')||1), xp: Number(val('q_xp')||100),
+    metric: val('q_metric')||null, active: Number(val('q_active'))
+  };
+  const r = await fetch(API_BASE+'/admin/quests',{method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json();
+  if(!r.ok){ alert((j && j.detail) || 'create failed'); return; }
+  await loadQuests();
+}
+
+async function updateQuest(){
+  const id = Number(val('q_id')||0);
+  if(!id){ alert('id required for update'); return; }
+  const body = {};
+  ['title','scope','goal','xp','metric','active'].forEach(k=>{
+    const map = {title:'q_title', scope:'q_scope', goal:'q_goal', xp:'q_xp', metric:'q_metric', active:'q_active'};
+    const v = val(map[k]);
+    if(v !== '') body[k] = (k==='goal'||k==='xp') ? Number(v) : (k==='active' ? Number(v) : v);
+  });
+  const r = await fetch(`${API_BASE}/admin/quests/${id}`,{method:'PATCH',credentials:'include',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json();
+  if(!r.ok){ alert((j && j.detail) || 'update failed'); return; }
+  await loadQuests();
+}
+
+async function deleteQuest(id){
+  if(!confirm('Delete quest '+id+'?')) return;
+  const r = await fetch(`${API_BASE}/admin/quests/${id}`, {method:'DELETE', credentials:'include'});
+  if(!r.ok){ alert('delete failed'); return; }
+  await loadQuests();
+}
+
+async function resetUser(){
+  const user_id = val('reset_uid').trim();
+  if(!user_id){ alert('discord_id required'); return; }
+  if(!confirm('Reset user '+user_id+' XP and quests?')) return;
+  const r = await fetch(API_BASE+'/admin/reset_user',{method:'POST',credentials:'include',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({user_id})});
+  const j = await r.json();
+  if(!r.ok){ alert((j && j.detail) || 'reset failed'); return; }
+  alert('Reset OK for '+user_id);
+}
+
+function escape(s){return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+
+document.getElementById('btnReload').onclick = loadQuests;
+document.getElementById('btnCreate').onclick = createQuest;
+document.getElementById('btnUpdate').onclick = updateQuest;
+document.getElementById('btnReset').onclick  = resetUser;
+
+(async function boot(){
+  await mustBeAdmin();
+  await loadQuests();
+})();
+</script>
+</body>
+</html>
