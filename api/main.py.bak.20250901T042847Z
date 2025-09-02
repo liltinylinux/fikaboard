@@ -1,0 +1,170 @@
+from __future__ import annotations
+import os, json, time, sqlite3, secrets, base64, hmac, hashlib
+from urllib.parse import urlencode
+import httpx
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+
+DB_PATH       = os.getenv("DB_PATH", "/opt/fika_xp/fika.db")
+SITE_ORIGIN   = os.getenv("SITE_ORIGIN", "http://51.222.136.98")
+SESSION_SECRET= os.getenv("SESSION_SECRET", secrets.token_urlsafe(32))
+CLIENT_ID     = os.getenv("DISCORD_CLIENT_ID")
+CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+REDIRECT_URI  = os.getenv("DISCORD_REDIRECT_URI", "http://51.222.136.98/xp/api/auth/callback")
+
+AUTHZ = "https://discord.com/api/oauth2/authorize"
+TOKEN = "https://discord.com/api/oauth2/token"
+ME_EP = "https://discord.com/api/users/@me"
+
+app = FastAPI(title="Fika XP API")
+app.add_middleware(CORSMiddleware,
+    allow_origins=[SITE_ORIGIN], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"]
+)
+
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+conn.row_factory = sqlite3.Row
+
+def q(sql, args=()):
+    cur = conn.execute(sql, args); conn.commit(); return cur
+
+def sign(data: str) -> str:
+    return base64.urlsafe_b64encode(hmac.new(SESSION_SECRET.encode(), data.encode(), hashlib.sha256).digest()).decode().rstrip("=")
+
+def set_session(resp: Response, payload: dict):
+    raw = json.dumps(payload, separators=(",", ":"))
+    b64 = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+    resp.set_cookie("sess", b64+"."+sign(b64), httponly=True, samesite="Lax", secure=False, max_age=60*60*24*30)
+
+def get_session(req: Request) -> dict | None:
+    c = req.cookies.get("sess"); 
+    if not c or "." not in c: return None
+    data, sig = c.rsplit(".", 1)
+    if sign(data) != sig: return None
+    try: return json.loads(base64.urlsafe_b64decode(data + "="))
+    except: return None
+
+def ensure_base():
+    q("""CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT, avatar TEXT, created_at INTEGER DEFAULT (strftime('%s','now')))""")
+    q("""CREATE TABLE IF NOT EXISTS profiles (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, game_name TEXT UNIQUE, level INTEGER DEFAULT 1, xp INTEGER DEFAULT 0)""")
+    q("""CREATE TABLE IF NOT EXISTS quests (id TEXT PRIMARY KEY, title TEXT, descr TEXT, scope TEXT, goal INTEGER, xp INTEGER, active INTEGER DEFAULT 1)""")
+    q("""CREATE TABLE IF NOT EXISTS user_quests (user_id TEXT, quest_id TEXT, accepted_at INTEGER, completed_at INTEGER, claimed_at INTEGER, progress INTEGER DEFAULT 0, PRIMARY KEY(user_id,quest_id))""")
+    q("""CREATE TABLE IF NOT EXISTS xp_ledger (user_id TEXT, delta INTEGER, reason TEXT, ts INTEGER DEFAULT (strftime('%s','now')))""")
+    # dev cheat quest
+    q("INSERT OR IGNORE INTO quests(id,title,descr,scope,goal,xp,active) VALUES('cheat','Test Cheat Quest','Dev-only quest for Tiny Keef','daily',1,500,1)")
+ensure_base()
+
+# ---------- Auth ----------
+@app.get("/api/auth/login")
+async def auth_login(redirect: str | None = "/quests.html"):
+    state = base64.urlsafe_b64encode(json.dumps({"next": redirect or "/quests.html"}).encode()).decode().rstrip("=")
+    qs = urlencode({
+        "client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI, "response_type": "code",
+        "scope": "identify", "prompt": "consent", "state": state
+    })
+    return RedirectResponse(AUTHZ + "?" + qs)
+
+@app.get("/api/auth/callback")
+async def auth_callback(code: str, state: str | None = None):
+    next_url = "/quests.html"
+    try:
+        st = json.loads(base64.urlsafe_b64decode((state or "") + "="))
+        next_url = st.get("next") or next_url
+    except: pass
+
+    async with httpx.AsyncClient() as http:
+        data = {
+            "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+            "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI
+        }
+        tok = (await http.post(TOKEN, data=data, headers={"Content-Type":"application/x-www-form-urlencoded"})).json()
+        if "access_token" not in tok: raise HTTPException(400, "oauth exchange failed")
+        me  = (await http.get(ME_EP, headers={"Authorization": f"Bearer {tok['access_token']}"})).json()
+
+    # upsert user
+    q("INSERT OR IGNORE INTO users(id,username,avatar) VALUES(?,?,?)", (me["id"], me.get("username"), me.get("avatar")))
+    q("UPDATE users SET username=?, avatar=? WHERE id=?", (me.get("username"), me.get("avatar"), me["id"]))
+
+    resp = RedirectResponse(SITE_ORIGIN + next_url)
+    set_session(resp, {"user_id": me["id"]})
+    return resp
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    resp = RedirectResponse(SITE_ORIGIN + "/")
+    resp.delete_cookie("sess")
+    return resp
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request):
+    sess = get_session(request)
+    if not sess: 
+        return {"authenticated": False}
+    u = q("SELECT id,username,avatar FROM users WHERE id=?", (sess["user_id"],)).fetchone()
+    avatar = f"https://cdn.discordapp.com/avatars/{u['id']}/{u['avatar']}.png" if u and u["avatar"] else None
+    return {"authenticated": True, "user": {"id": u["id"], "name": u["username"], "avatar": avatar}}
+
+# ---------- XP ----------
+def xp_summary_for(user_id: str) -> dict:
+    total = q("SELECT COALESCE(SUM(delta),0) AS t FROM xp_ledger WHERE user_id=?", (user_id,)).fetchone()["t"] or 0
+    cap = 1000
+    return {
+        "level": total // cap + 1,
+        "total_xp": total,
+        "xp_in_level": total % cap,
+        "level_cap": cap,
+        "progress_pct": round(100 * (total % cap) / cap)
+    }
+
+@app.get("/api/xp/summary")
+async def xp_summary(request: Request, user_id: str | None = None):
+    sess = get_session(request)
+    uid = user_id or (sess and sess.get("user_id"))
+    if not uid: raise HTTPException(401, "not logged in")
+    return xp_summary_for(uid)
+
+# ---------- Quests ----------
+@app.get("/api/quests")
+async def quests(scope: str = "all"):
+    if scope == "all":
+        rows = q("SELECT id,title,descr,scope,goal,xp FROM quests WHERE active=1 ORDER BY id").fetchall()
+    else:
+        rows = q("SELECT id,title,descr,scope,goal,xp FROM quests WHERE active=1 AND scope=? ORDER BY id", (scope,)).fetchall()
+    return [dict(r) | {"accepted": False, "completed": False, "claimed": False, "progress": 0} for r in rows]
+
+@app.post("/api/quests/{quest_id}/accept")
+async def quests_accept(quest_id: str, request: Request):
+    sess = get_session(request)
+    if not sess: raise HTTPException(401, "not logged in")
+    now = int(time.time())
+    # cheat quest auto-complete
+    completed_at = now if quest_id == "cheat" else None
+    q("""INSERT OR REPLACE INTO user_quests(user_id,quest_id,accepted_at,completed_at,claimed_at,progress)
+         VALUES(?,?,?,?,?, COALESCE((SELECT progress FROM user_quests WHERE user_id=? AND quest_id=?),0))""",
+      (sess["user_id"], quest_id, now, completed_at, None, sess["user_id"], quest_id))
+    return {"ok": True}
+
+@app.post("/api/quests/{quest_id}/claim")
+async def quests_claim(quest_id: str, request: Request):
+    sess = get_session(request)
+    if not sess: raise HTTPException(401, "not logged in")
+    uq = q("SELECT accepted_at,completed_at,claimed_at FROM user_quests WHERE user_id=? AND quest_id=?",
+           (sess["user_id"], quest_id)).fetchone()
+    if not uq or not uq["accepted_at"]: raise HTTPException(400, "quest not accepted")
+    if uq["claimed_at"]:              raise HTTPException(400, "already claimed")
+    xp_row = q("SELECT xp FROM quests WHERE id=?", (quest_id,)).fetchone()
+    xp = int(xp_row["xp"] if xp_row else 0)
+    now = int(time.time())
+    q("UPDATE user_quests SET completed_at=COALESCE(completed_at,?), claimed_at=? WHERE user_id=? AND quest_id=?",
+      (now, now, sess["user_id"], quest_id))
+    q("INSERT INTO xp_ledger(user_id,delta,reason,ts) VALUES(?,?,?,?)",
+      (sess["user_id"], xp, f"claim:{quest_id}", now))
+    return {"ok": True, "granted": xp, "summary": xp_summary_for(sess["user_id"])}
+
+@app.post("/api/quests/{quest_id}/discard")
+async def quests_discard(quest_id: str, request: Request):
+    sess = get_session(request)
+    if not sess: raise HTTPException(401, "not logged in")
+    q("DELETE FROM user_quests WHERE user_id=? AND quest_id=?", (sess["user_id"], quest_id))
+    return {"ok": True}

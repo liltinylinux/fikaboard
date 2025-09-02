@@ -1,0 +1,226 @@
+from __future__ import annotations
+import base64, hmac, json, os, secrets, time
+from hashlib import sha256
+from typing import Optional, Dict, Any
+import httpx
+from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi.responses import RedirectResponse, JSONResponse
+
+# -------------------------------------------------
+# Config
+# -------------------------------------------------
+CLIENT_ID     = os.getenv("DISCORD_CLIENT_ID", "")
+CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
+REDIRECT_URI  = os.getenv("DISCORD_REDIRECT_URI", "")
+SITE_ORIGIN   = os.getenv("SITE_ORIGIN", "")
+SESSION_SECRET= os.getenv("SESSION_SECRET", "change-me")
+COOKIE_NAME   = os.getenv("SESSION_COOKIE_NAME", "fika_sess")
+COOKIE_SECURE = SITE_ORIGIN.startswith("https://")  # secure cookies only when https
+COOKIE_SAMESITE = "Lax"
+COOKIE_PATH   = "/"
+TOKEN_URL     = "https://discord.com/api/oauth2/token"
+USER_URL      = "https://discord.com/api/users/@me"
+
+if not CLIENT_ID or not CLIENT_SECRET or not REDIRECT_URI:
+    # still start, but make it obvious in logs
+    print("[auth] WARNING: missing Discord OAuth env values")
+
+app = FastAPI()
+
+# -------------------------------------------------
+# Tiny signed cookie (HMAC-SHA256)
+# -------------------------------------------------
+def b64u(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+def b64u_dec(s: str) -> bytes:
+    pad = '=' * (-len(s) % 4)
+    return base64.urlsafe_b64decode(s + pad)
+
+def sign(payload: Dict[str, Any]) -> str:
+    raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+    sig = hmac.new(SESSION_SECRET.encode(), raw, sha256).digest()
+    return b64u(raw) + "." + b64u(sig)
+
+def verify(token: str) -> Optional[Dict[str, Any]]:
+    try:
+        p, s = token.split(".", 1)
+        raw = b64u_dec(p)
+        sig = b64u_dec(s)
+        expect = hmac.new(SESSION_SECRET.encode(), raw, sha256).digest()
+        if not hmac.compare_digest(sig, expect):
+            return None
+        obj = json.loads(raw.decode())
+        # optional expiry
+        if "exp" in obj and time.time() > float(obj["exp"]):
+            return None
+        return obj
+    except Exception:
+        return None
+
+def set_session_cookie(resp: Response, payload: Dict[str, Any]) -> None:
+    token = sign(payload)
+    resp.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=COOKIE_SECURE,      # false on HTTP, true on HTTPS
+        samesite=COOKIE_SAMESITE,  # Lax
+        path=COOKIE_PATH,
+        max_age=60*60*24*30,       # 30d
+    )
+
+def clear_session_cookie(resp: Response) -> None:
+    resp.delete_cookie(key=COOKIE_NAME, path=COOKIE_PATH)
+
+def get_session(request: Request) -> Optional[Dict[str, Any]]:
+    tok = request.cookies.get(COOKIE_NAME)
+    if not tok:
+        return None
+    return verify(tok)
+
+# -------------------------------------------------
+# Auth endpoints
+# -------------------------------------------------
+@app.get("/api/login")
+async def login(request: Request, redirect: Optional[str] = "/quests.html"):
+    # state carries nonce + next redirect
+    state = {
+        "nonce": secrets.token_urlsafe(16),
+        "next": redirect or "/quests.html",
+        "iat": int(time.time())
+    }
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "scope": "identify",
+        "redirect_uri": REDIRECT_URI,
+        "state": b64u(json.dumps(state).encode()),
+        "prompt": "consent",
+    }
+    # Build authorize URL manually to avoid any library dependency
+    q = "&".join(f"{k}={httpx.QueryParams({k:v})[k]}" for k, v in params.items())
+    url = f"https://discord.com/oauth2/authorize?{q}"
+    return RedirectResponse(url, status_code=307)
+
+@app.get("/api/callback")
+async def callback(request: Request, code: str, state: Optional[str] = None):
+    # decode state
+    next_path = "/quests.html"
+    if state:
+        try:
+            st = json.loads(b64u_dec(state).decode())
+            if isinstance(st, dict) and "next" in st:
+                next_path = st["next"] or next_path
+        except Exception:
+            pass
+
+    # Exchange code for token
+    data = {
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        tok = await client.post(TOKEN_URL, data=data, headers={"Content-Type":"application/x-www-form-urlencoded"})
+        if tok.status_code != 200:
+            return JSONResponse({"detail":"oauth exchange failed"}, status_code=400)
+        access_token = tok.json().get("access_token")
+        if not access_token:
+            return JSONResponse({"detail":"oauth exchange failed"}, status_code=400)
+
+        user = await client.get(USER_URL, headers={"Authorization": f"Bearer {access_token}"})
+        if user.status_code != 200:
+            return JSONResponse({"detail":"user fetch failed"}, status_code=400)
+        u = user.json()
+
+    # Create/refresh session (30d)
+    sess = {
+        "sub": str(u.get("id")),
+        "name": f'{u.get("global_name") or u.get("username") or "user"}',
+        "avatar": f'https://cdn.discordapp.com/avatars/{u.get("id")}/{u.get("avatar")}.png' if u.get("avatar") else "https://cdn.discordapp.com/embed/avatars/1.png",
+        "exp": time.time() + 60*60*24*30,
+    }
+    resp = RedirectResponse(url=next_path, status_code=307)
+    set_session_cookie(resp, sess)
+    return resp
+
+@app.get("/api/logout")
+async def logout(request: Request, redirect: Optional[str] = "/quests.html"):
+    resp = RedirectResponse(url=(redirect or "/quests.html"), status_code=307)
+    clear_session_cookie(resp)
+    return resp
+
+@app.get("/api/me")
+async def me(request: Request):
+    sess = get_session(request)
+    if not sess:
+        return {"authenticated": False}
+    return {"authenticated": True, "user": {"id": sess["sub"], "name": sess["name"], "avatar": sess["avatar"]}}
+
+# -------------------------------------------------
+# Minimal placeholders so UI keeps working
+# (replace with real DB-backed logic later)
+# -------------------------------------------------
+# in-memory state (non-persistent)
+ACCEPTED: Dict[str, set] = {}
+
+SAMPLE_QUESTS = [
+    {"id":"dogtags5","title":"Collect 5 PMC Dogtags","desc":"Find and secure five PMC dogtags in any raids this week.","scope":"weekly","goal":5,"progress":2,"xp":500,"accepted":False,"claimed":False},
+    {"id":"extract3","title":"Survive 3 Raids","desc":"Extract with your loot three times today.","scope":"daily","goal":3,"progress":1,"xp":250,"accepted":True,"claimed":False},
+    {"id":"pmc10","title":"Eliminate 10 PMCs","desc":"Any map. Any weapon. No mercy.","scope":"weekly","goal":10,"progress":10,"xp":900,"accepted":True,"claimed":True},
+]
+
+@app.get("/api/quests")
+async def quests(request: Request, scope: Optional[str] = "all"):
+    sess = get_session(request)
+    uid = sess["sub"] if sess else "guest"
+    acc = ACCEPTED.get(uid, set())
+    items = []
+    for q in SAMPLE_QUESTS:
+        if scope in ("daily","weekly") and q["scope"] != scope:
+            continue
+        qq = dict(q)
+        qq["accepted"] = (qq["id"] in acc) or qq.get("accepted", False)
+        items.append(qq)
+    return items
+
+@app.post("/api/quests/accept")
+async def accept(request: Request):
+    sess = get_session(request)
+    if not sess:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    body = await request.json()
+    qid = (body or {}).get("id")
+    if not qid:
+        raise HTTPException(status_code=400, detail="Missing quest id")
+    s = ACCEPTED.setdefault(sess["sub"], set())
+    s.add(qid)
+    return {"ok": True}
+
+@app.post("/api/link_name")
+async def link_name(request: Request):
+    # placeholder: accept whatever; wire to SPT profile later
+    sess = get_session(request)
+    if not sess:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    body = await request.json()
+    name = (body or {}).get("name","").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Missing name")
+    # store in cookie for demo (NOT for production linking)
+    new_sess = dict(sess)
+    new_sess["name"] = f'{name} (Discord:{sess["sub"]})'
+    resp = JSONResponse({"ok": True, "linked_name": name})
+    set_session_cookie(resp, new_sess)
+    return resp
+
+# --- Fika XP quests_ext router (auto-added) ---
+try:
+    from api.quests_ext import router as quests_ext_router
+    app.include_router(quests_ext_router, prefix="/api")
+except Exception as _e:
+    import logging
+    logging.getLogger(__name__).exception("quests_ext include failed: %s", _e)
