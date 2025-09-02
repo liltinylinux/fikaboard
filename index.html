@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fika XP — Leaderboard</title>
+  <link rel="stylesheet" href="/assets/css/site.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <div class="brand"><img src="/assets/img/logo.svg" alt=""><span>Fika XP</span></div>
+      <div>
+        <a href="/index.html" style="margin-right:16px;">Leaderboard</a>
+        <a href="/quests.html">Quests</a>
+      </div>
+      <div id="user-slot"></div>
+    </div>
+
+    <div class="card">
+      <div class="headline">
+        <div class="tabs">
+          <button class="tab active" data-range="24h">24h</button>
+          <button class="tab" data-range="7d">7d</button>
+          <button class="tab" data-range="all">All</button>
+        </div>
+        <div class="muted">Updated: <span id="lb-updated">—</span></div>
+      </div>
+      <table class="table">
+        <thead>
+          <tr><th>#</th><th>Name</th><th>Raids</th><th>Kills</th><th>Deaths</th><th>XP</th></tr>
+        </thead>
+        <tbody id="lb-body">
+          <tr><td colspan="6" class="empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <footer>Data refreshes automatically as your server writes <code>leaderboard-*.json</code>.</footer>
+  </div>
+
+  <script src="/assets/js/api.js"></script>
+  <script src="/assets/js/leaderboard.js"></script>
+</body>
+</html>

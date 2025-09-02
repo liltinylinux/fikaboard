@@ -1,0 +1,38 @@
+// Tiny API helper shared by leaderboard and quests
+// If you proxy under /xp/, switch to: const API_BASE = '/xp/api';
+const API_BASE = '/api';
+
+async function apiGet(path) {
+  const r = await fetch(`${API_BASE}${path}`, { credentials: 'include' });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  try { return await r.json(); } catch { return {}; }
+}
+
+async function apiPost(path, body) {
+  const r = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: body ? JSON.stringify(body) : null
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  try { return await r.json(); } catch { return {}; }
+}
+
+function login(redirect = location.pathname) {
+  // back-end returns 307 to Discord and sets cookie on callback
+  location.href = `${API_BASE}/login?redirect=${encodeURIComponent(redirect)}`;
+}
+function logout(redirect = location.pathname) {
+  location.href = `${API_BASE}/logout?redirect=${encodeURIComponent(redirect)}`;
+}
+
+async function fetchMe() {
+  try { return await apiGet('/me'); }
+  catch { return { authenticated:false }; }
+}
+
+function avatarUrl(u) {
+  if (!u || !u.avatar) return '/assets/img/avatar-default.svg';
+  return u.avatar; // backend should provide full CDN url
+}

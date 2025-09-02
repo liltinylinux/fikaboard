@@ -1,0 +1,46 @@
+{
+  "updatedAt": "2025-09-02T15:17:07Z",
+  "range": "all",
+  "players": [
+    {
+      "name": "bimmerslidinby",
+      "raids": 94,
+      "kills": 65,
+      "deaths": 24,
+      "xp": 65000,
+      "playtime": "\u2014"
+    },
+    {
+      "name": "tinykeef",
+      "raids": 131,
+      "kills": 53,
+      "deaths": 74,
+      "xp": 53000,
+      "playtime": "\u2014"
+    },
+    {
+      "name": "PANDEEEZY",
+      "raids": 148,
+      "kills": 47,
+      "deaths": 53,
+      "xp": 47000,
+      "playtime": "\u2014"
+    },
+    {
+      "name": "TYTYTARKOV",
+      "raids": 173,
+      "kills": 22,
+      "deaths": 50,
+      "xp": 22000,
+      "playtime": "\u2014"
+    },
+    {
+      "name": "unknown",
+      "raids": 0,
+      "kills": 0,
+      "deaths": 0,
+      "xp": 0,
+      "playtime": "\u2014"
+    }
+  ]
+}

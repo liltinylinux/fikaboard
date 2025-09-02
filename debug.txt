@@ -1,0 +1,9 @@
+# debug
+mode: docker
+kill_matches: 0
+death_matches: 0
+xp_matches: 0
+raid_matches: 0
+seen_names: []
+ts: 2025-08-26T02:29:24Z
+sample_hint: If matches=0, paste a few real log lines so we can tune regex.

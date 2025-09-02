@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fika XP — Quests</title>
+<style>
+  :root{
+    --bg:#0d0f12; --panel:#0f141b; --panel-2:#151b23; --panel-3:#1a2230;
+    --text:#e7eef7; --muted:#8aa1bb; --brand:#3a86ff; --border:#1f2834;
+    --disc:#5865F2;
+  }
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial}
+  a{color:#8ab4ff;text-decoration:none}
+  .container{max-width:1100px;margin:24px auto;padding:0 16px}
+  .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+  .brand{font-weight:800;letter-spacing:.4px}
+  .nav-links a{margin:0 8px}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;
+        border:1px solid var(--panel-3);border-radius:999px;
+        background:var(--panel-2);color:#dce7f7}
+  .avatar{width:24px;height:24px;border-radius:50%}
+  .btn{cursor:pointer;border-radius:10px;border:1px solid var(--panel-3);
+       background:var(--panel-2);color:#dce7f7;padding:6px 12px}
+  .btn:hover{background:#1d2633}
+  .btn[disabled]{opacity:.55;cursor:not-allowed}
+  .tabs{display:flex;gap:10px;margin:12px 0 8px}
+  .tab{background:var(--panel-2);color:#cdd8e6;border:1px solid var(--border);
+       border-radius:999px;padding:6px 12px;cursor:pointer}
+  .tab.active{background:#243041;color:#fff;border-color:#2f3c4f}
+  .headline{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .muted{color:var(--muted);font-size:14px}
+  .card{background:var(--panel);border:1px solid var(--panel-3);
+        border-radius:14px;padding:16px;margin:12px 0}
+  .q-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .q-title{font-weight:700}
+  .badges{display:flex;gap:8px}
+  .badge{font-size:12px;background:var(--panel-2);color:#9fb2cc;
+         border-radius:999px;padding:2px 8px;border:1px solid #243041}
+  .q-desc{color:#a8b5c6;margin-bottom:10px}
+  .progress{background:#11161e;border:1px solid #1b2431;height:8px;border-radius:999px;overflow:hidden}
+  .bar{height:100%;width:0%;background:var(--brand)}
+  .row-right{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
+  .status{color:#9fb2cc;font-size:13px;margin-right:auto}
+  .quiet{color:#8aa1bb;font-size:13px;margin-top:12px}
+  .panel{border:1px solid var(--panel-3);background:var(--panel);border-radius:14px;padding:18px}
+  .login-hero{display:grid;place-items:center;min-height:40vh;text-align:center}
+  .disc-btn{display:inline-flex;align-items:center;gap:10px;background:var(--disc);
+            border:0;color:#fff;padding:12px 18px;border-radius:10px;font-weight:700;cursor:pointer}
+  .disc-btn svg{width:20px;height:20px;fill:#fff}
+  .banner{margin:12px 0;padding:10px;border:1px dashed #3b4a60;
+          border-radius:12px;background:#0c1219;color:#b8c7db}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <div class="brand">Fika XP</div>
+      <div class="nav-links">
+        <a href="/index.html">Leaderboard</a>
+        <a href="/quests.html" style="font-weight:700">Quests</a>
+      </div>
+      <div id="user-slot"></div>
+    </div>
+
+    <div id="login-hero" class="login-hero" style="display:none">
+      <div>
+        <h1>Quests & Levels</h1>
+        <p class="muted">Sign in with Discord to track progress and claim XP.</p>
+        <button id="login-btn" class="disc-btn" aria-label="Sign in with Discord">
+          <svg viewBox="0 0 245 240" aria-hidden="true">
+            <path d="M104.4 105.7c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1 0.1-6.1-4.5-11.1-10.2-11.1zm36.2 0c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1s-4.5-11.1-10.2-11.1z"/>
+            <path d="M189.5 20h-134C32.9 20 15 37.9 15 59.7v120.6C15 202.1 32.9 220 55.5 220h113.3l-5.3-18.5 12.8 11.9 12.1 11.2 21.2 18.4V59.7c0-21.8-17.9-39.7-40.1-39.7zm-38.6 135.1s-3.6-4.3-6.6-8.1c13.1-3.7 18.1-11.9 18.1-11.9-4.1 2.7-8 4.6-11.5 5.9-5 2.1-9.8 3.4-14.5 4.2-9.6 1.8-18.4 1.3-25.9-0.1-5.7-1.1-10.6-2.6-14.7-4.2-2.3-0.9-4.8-2-7.3-3.4-0.3-0.2-0.5-0.3-0.8-0.4-0.2-0.1-0.3-0.2-0.4-0.2-1.8-1-2.8-1.7-2.8-1.7s4.8 8 17.5 11.8c-3 3.8-6.7 8.2-6.7 8.2-22.1-0.7-30.5-15.2-30.5-15.2 0-32.1 14.4-58.1 14.4-58.1 14.4-10.8 28.1-10.5 28.1-10.5l1 1.2c-18 5.2-26.3 13.1-26.3 13.1s2.2-1.2 5.9-2.8c10.7-4.7 19.1-5.9 22.5-6.2 0.6-0.1 1.1-0.2 1.7-0.2 6.1-0.8 13-1 20.2-0.2 9.5 1.1 19.6 3.9 29.9 9.6 0 0-7.9-7.5-24.9-12.7l1.4-1.6s13.7-0.4 28.1 10.5c0 0 14.4 26 14.4 58.1 0.1 0-8.3 14.5-30.4 15.2z"/>
+          </svg>
+          Sign in with Discord
+        </button>
+        <div id="dev-banner" class="banner" style="display:none;margin-top:16px">
+          Dev mode ON — using Tiny Keef as session. Accept/claim works without login.
+        </div>
+      </div>
+    </div>
+
+    <div id="authed-area" style="display:none">
+      <div class="headline">
+        <div class="tabs">
+          <button class="tab active" data-scope="daily">Daily</button>
+          <button class="tab" data-scope="weekly">Weekly</button>
+          <button class="tab" data-scope="all">All</button>
+        </div>
+        <div class="muted">Showing <span id="scope-label">daily</span> quests</div>
+      </div>
+
+      <div id="xp-summary" class="panel" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+          <strong>Level progress</strong>
+          <span class="muted" id="xp-numbers">...</span>
+        </div>
+        <div class="progress"><div id="xp-bar" class="bar"></div></div>
+      </div>
+
+      <div id="quest-list"></div>
+      <p class="quiet">Tip: Accept a quest to start tracking. Claimed XP feeds your site level.</p>
+    </div>
+  </div>
+
+<script>
+/* -------- Config (matches your nginx) -------- */
+const API_BASE = '/xp/api';
+const DEV_MODE = false; // turn on only if you want the Tiny Keef fallback
+const DEV_USER_ID = '344568707294429185';
+const REDIRECT_AFTER_LOGIN = '/quests.html';
+
+/* -------- tiny helpers -------- */
+async function apiGet(path){
+  const r = await fetch(API_BASE+path,{credentials:'include'});
+  if(!r.ok) throw new Error(r.status+' '+r.statusText);
+  try{return await r.json();}catch{return {};}
+}
+async function apiPost(path,body){
+  const r=await fetch(API_BASE+path,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    credentials:'include',body:body?JSON.stringify(body):null});
+  if(!r.ok){let m=r.status+' '+r.statusText;
+    try{const j=await r.json();if(j.detail)m=j.detail;}catch{}
+    throw new Error(m);}
+  try{return await r.json();}catch{return {};}
+}
+function login(redir=REDIRECT_AFTER_LOGIN){ location.href=API_BASE+'/login?redirect='+encodeURIComponent(redir); }
+function logout(redir=REDIRECT_AFTER_LOGIN){ location.href=API_BASE+'/logout?redirect='+encodeURIComponent(redir); }
+
+/* -------- DOM refs -------- */
+const elHero=document.getElementById('login-hero');
+const elAuthed=document.getElementById('authed-area');
+const elDevBanner=document.getElementById('dev-banner');
+const elUserSlot=document.getElementById('user-slot');
+const elScopeLabel=document.getElementById('scope-label');
+const elQuestList=document.getElementById('quest-list');
+const elXpSummary=document.getElementById('xp-summary');
+const elXpNumbers=document.getElementById('xp-numbers');
+const elXpBar=document.getElementById('xp-bar');
+document.getElementById('login-btn').onclick=()=>login();
+
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    btn.classList.add('active');
+    loadQuests(btn.dataset.scope);
+  };
+});
+
+/* -------- session handling (normalizes /api/me shape) -------- */
+let SESSION={authenticated:false,user:null};
+
+function normalizeMe(me){
+  // Shape A (recommended backend): { auth: true, discord_id, username, avatar }
+  if (me && me.auth===true && me.discord_id){
+    const avatar = me.avatar
+      ? `https://cdn.discordapp.com/avatars/${me.discord_id}/${me.avatar}.png`
+      : null;
+    return { authenticated:true, user:{ id:String(me.discord_id), name:me.username||'User', avatar } };
+  }
+  // Shape B (alternative): { authenticated: true, user: { id, name, avatar } }
+  if (me && me.authenticated===true && me.user && me.user.id){
+    return { authenticated:true, user:{ id:String(me.user.id), name:me.user.name||'User', avatar:me.user.avatar||null } };
+  }
+  return { authenticated:false, user:null };
+}
+
+function currentUserId(){
+  if(SESSION.authenticated && SESSION.user && SESSION.user.id) return SESSION.user.id;
+  if(DEV_MODE) return DEV_USER_ID;
+  return null;
+}
+
+async function loadMe(){
+  try{
+    const me = await apiGet('/me');
+    SESSION = normalizeMe(me);
+  }catch{
+    SESSION = { authenticated:false, user:null };
+  }
+  renderUserSlot();
+  const uid=currentUserId();
+  if(uid){
+    elHero.style.display='none';
+    elAuthed.style.display='';
+    elXpSummary.style.display='';
+    await Promise.all([loadSummary(uid),loadQuests('daily')]);
+  }else{
+    elAuthed.style.display='none';
+    elHero.style.display='';
+    elDevBanner.style.display=DEV_MODE?'':'none';
+  }
+}
+
+function renderUserSlot(){
+  if(SESSION.authenticated && SESSION.user){
+    const u=SESSION.user, av=u.avatar||'https://cdn.discordapp.com/embed/avatars/1.png';
+    elUserSlot.innerHTML=`<span class="pill"><img class="avatar" src="${av}" alt="">
+      <span>${u.name}</span><button class="btn" id="logout">Logout</button></span>`;
+    document.getElementById('logout').onclick=()=>logout();
+  }else if(DEV_MODE){
+    elUserSlot.innerHTML=`<span class="pill"><img class="avatar" src="https://cdn.discordapp.com/embed/avatars/2.png" alt="">
+      <span>Dev: Tiny Keef</span><button class="btn" id="realLogin">Sign in</button></span>`;
+    document.getElementById('realLogin').onclick=()=>login();
+  }else{
+    elUserSlot.innerHTML=`<button class="disc-btn" onclick="login()">Sign in with Discord</button>`;
+  }
+}
+
+/* -------- summary + quests -------- */
+async function loadSummary(userId){
+  try{
+    const s=await apiGet('/summary?user_id='+encodeURIComponent(userId));
+    const pct=Math.min(100,Math.max(0, s.progress_pct ?? Math.round(100*(s.xp_in_level||0)/(s.level_cap||1))));
+    elXpBar.style.width=pct+'%';
+    elXpNumbers.textContent=`Lv ${s.level||1} — ${s.xp_in_level||0}/${s.level_cap||0} XP (total ${s.total_xp||0})`;
+  }catch{
+    elXpNumbers.textContent='Level data unavailable';
+  }
+}
+
+async function loadQuests(scope){
+  elScopeLabel.textContent=scope;
+  elQuestList.innerHTML='<div class="muted">Loading…</div>';
+  try{
+    const qs=await apiGet('/quests?scope='+encodeURIComponent(scope));
+    elQuestList.innerHTML='';
+    const list = Array.isArray(qs) ? qs : (qs.quests || []);
+    if(!list.length){ elQuestList.innerHTML='<div class="muted">No '+scope+' quests.</div>'; return; }
+    list.forEach(q=>elQuestList.appendChild(renderQuest(q)));
+  }catch(e){
+    elQuestList.innerHTML='<div class="muted">Failed to load quests: '+escapeHTML(e.message)+'</div>';
+  }
+}
+
+function renderQuest(q){
+  const card=document.createElement('div'); card.className='card';
+  const pct=q.goal?Math.min(100,Math.floor((q.progress||0)/q.goal*100)):0;
+  const status=q.claimed?'Claimed':(q.completed?'Complete':(q.accepted?'In progress':'Not accepted'));
+  card.innerHTML=`<div class="q-head"><div class="q-title">${escapeHTML(q.title||'Quest')}</div>
+    <div class="badges"><span class="badge">${escapeHTML(q.scope||'--')}</span><span class="badge">${q.xp||0} XP</span></div></div>
+    <div class="q-desc">${escapeHTML(q.descr||'')}</div>
+    <div class="progress"><div class="bar" style="width:${pct}%"></div></div>
+    <div class="row-right"><div class="status">${status}</div>
+    <button class="btn" data-act="accept" ${q.accepted?'disabled':''}>Accept</button>
+    <button class="btn" data-act="claim" ${(q.completed&&!q.claimed&&q.accepted)?'':'disabled'}>Claim</button>
+    <button class="btn" data-act="discard" ${q.accepted?'':'disabled'}>Discard</button></div>`;
+  const uid=currentUserId();
+  card.querySelector('[data-act="accept"]').onclick=()=>questAction('/user/quests/accept',uid,q.id);
+  card.querySelector('[data-act="claim"]').onclick=()=>questAction('/user/quests/claim',uid,q.id);
+  card.querySelector('[data-act="discard"]').onclick=()=>questAction('/user/quests/discard',uid,q.id);
+  return card;
+}
+async function questAction(endpoint,uid,qid){
+  if(!uid) return alert('Please sign in.');
+  try{
+    await apiPost(endpoint,{user_id:String(uid),quest_id:String(qid)});
+    await reloadUI();
+  }catch(e){ alert(e.message); }
+}
+
+async function reloadUI(){
+  const uid=currentUserId(); if(uid) await loadSummary(uid);
+  const active=document.querySelector('.tab.active')?.dataset.scope||'daily';
+  await loadQuests(active);
+}
+
+function escapeHTML(s){return String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+
+/* -------- boot -------- */
+loadMe();
+</script>
+</body>
+</html>

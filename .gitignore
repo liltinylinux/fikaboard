@@ -1,0 +1,4 @@
+# Don’t ignore anything here by default; it’s static content.
+# If you have local build tools, ignore their outputs:
+node_modules/
+dist/

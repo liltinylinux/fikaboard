@@ -1,0 +1,41 @@
+:root{
+  --bg:#0d0f12; --panel:#0f141b; --panel-2:#151b23; --panel-3:#1a2230;
+  --muted:#8aa1bb; --text:#e7eef7; --accent:#3a86ff; --accent-2:#6ea8ff;
+  --stroke:#1f2834; --ok:#48c78e; --warn:#ffb74d;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;}
+a{color:#8ab4ff;text-decoration:none}
+.container{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+.nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700}
+.brand img{width:24px;height:24px}
+.nav .right{display:flex;align-items:center;gap:12px}
+.userbox{display:flex;align-items:center;gap:8px;color:var(--muted)}
+.userbox img{width:24px;height:24px;border-radius:50%}
+.btn{cursor:pointer;border-radius:10px;border:1px solid var(--stroke);background:var(--panel-2);color:var(--text);padding:6px 12px}
+.btn:hover{background:var(--panel-3)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.tabs{display:flex;gap:10px;margin:8px 0 16px}
+.tab{background:var(--panel-2);color:#cdd8e6;border:1px solid var(--stroke);border-radius:999px;padding:6px 12px;cursor:pointer}
+.tab.active{background:#243041;color:#fff;border-color:#2c3a4e}
+.card{background:var(--panel);border:1px solid var(--panel-3);border-radius:14px;padding:16px;margin:12px 0}
+.muted{color:var(--muted)}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{padding:10px;border-bottom:1px solid var(--stroke);text-align:left}
+.table th{color:#cdd8e6;font-weight:600}
+.kpis{display:flex;gap:12px;align-items:center;color:#cdd8e6}
+.kpi{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;padding:6px 10px}
+.progress{background:#11161e;border:1px solid #1b2431;height:8px;border-radius:999px;overflow:hidden}
+.bar{height:100%;width:0%;background:var(--accent)}
+.center{display:flex;align-items:center;justify-content:center;min-height:60vh;text-align:center}
+.discord-btn{display:inline-flex;align-items:center;gap:10px;background:#5865F2;color:white;border:none;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
+.discord-btn img{width:20px;height:20px}
+.headline{display:flex;align-items:center;justify-content:space-between;margin:6px 0 10px}
+.badges{display:flex;gap:8px;align-items:center}
+.badge{font-size:12px;background:var(--panel-2);color:#9fb2cc;border-radius:999px;padding:2px 8px;border:1px solid #243041}
+.qtitle{font-weight:600}
+.row-right{display:flex;gap:8px;align-items:center}
+.empty{color:var(--muted);padding:24px;text-align:center}
+footer{margin-top:36px;color:var(--muted);font-size:12px;text-align:center}
