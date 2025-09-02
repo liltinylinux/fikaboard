@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fika XP — Sign in</title>
+<style>
+  :root{--bg:#0d0f12;--panel:#0f141b;--text:#e7eef7;--muted:#8aa1bb;--disc:#5865F2;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial}
+  .wrap{min-height:100vh;display:grid;place-items:center;padding:24px}
+  .card{background:var(--panel);border:1px solid #1a2230;border-radius:16px;padding:28px;max-width:420px;width:100%;text-align:center}
+  .disc-btn{display:inline-flex;align-items:center;gap:10px;background:var(--disc);border:0;color:#fff;padding:12px 18px;border-radius:10px;font-weight:700;cursor:pointer}
+  .disc-btn svg{width:20px;height:20px;fill:#fff}
+  .muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1 style="margin:0 0 10px">Welcome to Fika XP</h1>
+    <p class="muted" style="margin:0 0 18px">Sign in with Discord to view quests and leaderboards.</p>
+    <button id="login-btn" class="disc-btn" aria-label="Sign in with Discord">
+      <svg viewBox="0 0 245 240" aria-hidden="true">
+        <path d="M104.4 105.7c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1 0.1-6.1-4.5-11.1-10.2-11.1zm36.2 0c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1s-4.5-11.1-10.2-11.1z"/>
+        <path d="M189.5 20h-134C32.9 20 15 37.9 15 59.7v120.6C15 202.1 32.9 220 55.5 220h113.3l-5.3-18.5 12.8 11.9 12.1 11.2 21.2 18.4V59.7c0-21.8-17.9-39.7-40.1-39.7zm-38.6 135.1s-3.6-4.3-6.6-8.1c13.1-3.7 18.1-11.9 18.1-11.9-4.1 2.7-8 4.6-11.5 5.9-5 2.1-9.8 3.4-14.5 4.2-9.6 1.8-18.4 1.3-25.9-0.1-5.7-1.1-10.6-2.6-14.7-4.2-2.3-0.9-4.8-2-7.3-3.4-0.3-0.2-0.5-0.3-0.8-0.4-0.2-0.1-0.3-0.2-0.4-0.2-1.8-1-2.8-1.7-2.8-1.7s4.8 8 17.5 11.8c-3 3.8-6.7 8.2-6.7 8.2-22.1-0.7-30.5-15.2-30.5-15.2 0-32.1 14.4-58.1 14.4-58.1 14.4-10.8 28.1-10.5 28.1-10.5l1 1.2c-18 5.2-26.3 13.1-26.3 13.1s2.2-1.2 5.9-2.8c10.7-4.7 19.1-5.9 22.5-6.2 0.6-0.1 1.1-0.2 1.7-0.2 6.1-0.8 13-1 20.2-0.2 9.5 1.1 19.6 3.9 29.9 9.6 0 0-7.9-7.5-24.9-12.7l1.4-1.6s13.7-0.4 28.1 10.5c0 0 14.4 26 14.4 58.1 0.1 0-8.3 14.5-30.4 15.2z"/>
+      </svg>
+      Sign in with Discord
+    </button>
+  </div>
+</div>
+<script>
+const API_BASE = '/xp/api';
+document.getElementById('login-btn').onclick = () => {
+  // after login, land on quests
+  location.href = API_BASE + '/login?redirect=' + encodeURIComponent('/quests.html');
+};
+</script>
+</body>
+</html>
