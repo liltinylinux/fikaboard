@@ -7,6 +7,43 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel
 
+import os
+
+ADMIN_IDS = set([x.strip() for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()])
+
+# ... your existing app = FastAPI() & CORS ...
+
+@app.middleware("http")
+async def attach_session(request: Request, call_next):
+    # make cookie session accessible to routers via request.state.session
+    try:
+        sess = get_session(request)
+    except Exception:
+        sess = None
+    request.state.session = sess
+    return await call_next(request)
+
+# --- API ---
+@app.get("/api/me")
+async def me(request: Request):
+    sess = get_session(request)
+    if not sess:
+        return {"auth": False}
+    did = str(sess["discord_id"])
+    # ... your existing DB lookups ...
+    return {
+        "auth": True,
+        "discord_id": did,
+        "username": sess.get("username"),
+        "avatar": sess.get("avatar"),
+        "is_admin": did in ADMIN_IDS,
+        # ... keep the rest of your fields ...
+    }
+
+# Mount admin router
+from .admin_router import router as admin_router
+app.include_router(admin_router, prefix="/api/admin")
+
 # =========================
 # Config
 # =========================
