@@ -1,67 +1,29 @@
 from __future__ import annotations
-import os, json, sqlite3, secrets, base64, hmac, hashlib, time
-from urllib.parse import urlencode, quote, unquote
+
+import os, json, time, base64, hmac, hashlib, secrets, sqlite3
+from urllib.parse import urlencode, quote_plus
+from typing import Optional, Dict, Any
+
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException, Body, Query
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import RedirectResponse, JSONResponse, PlainTextResponse
 
-import os
-
-ADMIN_IDS = set([x.strip() for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()])
-
-# ... your existing app = FastAPI() & CORS ...
-
-@app.middleware("http")
-async def attach_session(request: Request, call_next):
-    # make cookie session accessible to routers via request.state.session
-    try:
-        sess = get_session(request)
-    except Exception:
-        sess = None
-    request.state.session = sess
-    return await call_next(request)
-
-# --- API ---
-@app.get("/api/me")
-async def me(request: Request):
-    sess = get_session(request)
-    if not sess:
-        return {"auth": False}
-    did = str(sess["discord_id"])
-    # ... your existing DB lookups ...
-    return {
-        "auth": True,
-        "discord_id": did,
-        "username": sess.get("username"),
-        "avatar": sess.get("avatar"),
-        "is_admin": did in ADMIN_IDS,
-        # ... keep the rest of your fields ...
-    }
-
-# Mount admin router
-from .admin_router import router as admin_router
-app.include_router(admin_router, prefix="/api/admin")
-
-# =========================
-# Config
-# =========================
-DB_PATH        = os.getenv("DB_PATH", "/opt/fika_xp/fika.db")
-CLIENT_ID      = os.getenv("DISCORD_CLIENT_ID")
-CLIENT_SECRET  = os.getenv("DISCORD_CLIENT_SECRET")
-SITE_ORIGIN    = os.getenv("SITE_ORIGIN", "http://51.222.136.98")
-REDIRECT_URI   = os.getenv("DISCORD_REDIRECT_URI", f"{SITE_ORIGIN}/xp/api/callback")
+# ========= Config =========
+DB_PATH       = os.getenv("DB_PATH", "/opt/fika_xp/fika.db")
+SITE_ORIGIN   = os.getenv("SITE_ORIGIN", "http://51.222.136.98")
+CLIENT_ID     = os.getenv("DISCORD_CLIENT_ID")
+CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
+REDIRECT_URI  = os.getenv("DISCORD_REDIRECT_URI", "http://51.222.136.98/xp/api/callback")
 SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_urlsafe(32))
 
 OAUTH_AUTHORIZE = "https://discord.com/api/oauth2/authorize"
 OAUTH_TOKEN     = "https://discord.com/api/oauth2/token"
 ME_ENDPOINT     = "https://discord.com/api/users/@me"
 
-# =========================
-# App & CORS
-# =========================
+# ========= App =========
 app = FastAPI(title="Fika XP API")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[SITE_ORIGIN],
@@ -70,91 +32,185 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# =========================
-# DB helpers
-# =========================
-def connect() -> sqlite3.Connection:
+# ========= DB helpers =========
+def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
-def seed_quests_if_missing() -> None:
+def table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    r = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (name,)).fetchone()
+    return bool(r)
+
+def column_exists(conn: sqlite3.Connection, table: str, col: str) -> bool:
+    cols = [c["name"] for c in conn.execute(f"PRAGMA table_info({table});").fetchall()]
+    return col in cols
+
+def ensure_min_schema() -> None:
     """
-    Safe seeding using slug (UNIQUE) so we don't collide with existing IDs.
-    Matches your current quests schema:
-        quests(id INTEGER PK AUTOINCREMENT, slug TEXT UNIQUE, title, descr, scope, goal, xp, metric, active INT)
+    Create minimally-required tables *if they don't exist*.
+    Do NOT ALTER existing columns to avoid 'datatype mismatch' crashes.
     """
-    conn = connect()
-    cur  = conn.cursor()
+    conn = db()
+    cur = conn.cursor()
+
+    # users: holds Discord identity (safe to create if missing)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS quests (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            slug    TEXT UNIQUE,
-            title   TEXT,
-            descr   TEXT,
-            scope   TEXT,
-            goal    INTEGER,
-            xp      INTEGER,
-            metric  TEXT,
-            active  INTEGER DEFAULT 1
+        CREATE TABLE IF NOT EXISTS users (
+          discord_id TEXT PRIMARY KEY,
+          username   TEXT,
+          avatar     TEXT,
+          created_at INTEGER,
+          updated_at INTEGER
         )
     """)
-    # Dev cheat
+
+    # quests: generic definition (keep flexible)
     cur.execute("""
-        INSERT OR IGNORE INTO quests(slug, title, descr, scope, goal, xp, metric, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    """, ("dev-cheat", "Dev Cheat Quest", "Dev-only quest to verify accept/claim flow", "daily", 1, 500, "manual"))
-    # Example daily
+        CREATE TABLE IF NOT EXISTS quests (
+          id      INTEGER PRIMARY KEY AUTOINCREMENT,
+          slug    TEXT UNIQUE,
+          title   TEXT,
+          descr   TEXT,
+          scope   TEXT,
+          goal    INTEGER,
+          xp      INTEGER,
+          metric  TEXT,
+          active  INTEGER DEFAULT 1
+        )
+    """)
+
+    # user_quests: use flexible single 'status' if that’s what exists
     cur.execute("""
-        INSERT OR IGNORE INTO quests(slug, title, descr, scope, goal, xp, metric, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    """, ("survive-3", "Survive 3 Raids", "Extract with your loot three times today.", "daily", 3, 250, "extracts"))
+        CREATE TABLE IF NOT EXISTS user_quests (
+          user_id      TEXT NOT NULL,
+          quest_id     INTEGER NOT NULL,
+          accepted_at  INTEGER,
+          progress     INTEGER DEFAULT 0,
+          completed_at INTEGER,
+          claimed_at   INTEGER,
+          status       TEXT DEFAULT 'not_accepted',
+          PRIMARY KEY (user_id, quest_id),
+          FOREIGN KEY (quest_id) REFERENCES quests(id)
+        )
+    """)
+
+    # optional ledgers (used for summary)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_xp_ledger (
+          id      INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          amount  INTEGER NOT NULL,
+          reason  TEXT,
+          ts      INTEGER DEFAULT (strftime('%s','now'))
+        )
+    """)
+
+    # Try to seed a couple of dev quests (idempotent)
+    try:
+        cur.execute("""
+            INSERT OR IGNORE INTO quests(slug,title,descr,scope,goal,xp,metric,active)
+            VALUES (?,?,?,?,?,?,?,1)
+        """, ("dev-cheat", "Dev Cheat Quest", "Dev-only quest to verify accept/claim flow", "daily", 1, 500, "manual"))
+        cur.execute("""
+            INSERT OR IGNORE INTO quests(slug,title,descr,scope,goal,xp,metric,active)
+            VALUES (?,?,?,?,?,?,?,1)
+        """, ("daily-survive-3", "Survive 3 Raids", "Extract with your loot three times today.", "daily", 3, 250, "extracts"))
+    except Exception:
+        # If there's any constraint mismatch, ignore seeding (schema is still usable)
+        pass
+
     conn.commit()
     conn.close()
 
-# =========================
-# Session cookie helpers
-# =========================
-def _sign(data: str) -> str:
+# ========= Session (HMAC cookie) =========
+def _sign(b64: str) -> str:
     return base64.urlsafe_b64encode(
-        hmac.new(SESSION_SECRET.encode(), data.encode(), hashlib.sha256).digest()
+        hmac.new(SESSION_SECRET.encode(), b64.encode(), hashlib.sha256).digest()
     ).decode().rstrip("=")
 
-def set_session(resp: Response, payload: dict):
+def set_session(resp: Response, payload: Dict[str, Any]) -> None:
     raw = json.dumps(payload, separators=(",", ":"))
-    cookie = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+    b64 = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+    sig = _sign(b64)
     resp.set_cookie(
-        "sess", cookie + "." + _sign(cookie),
+        "sess", f"{b64}.{sig}",
         httponly=True, samesite="Lax", secure=False, max_age=60*60*24*30
     )
 
-def get_session(req: Request) -> dict | None:
+def get_session(req: Request) -> Optional[Dict[str, Any]]:
     c = req.cookies.get("sess")
     if not c or "." not in c:
         return None
-    cookie, sig = c.rsplit(".", 1)
-    if _sign(cookie) != sig:
+    b64, sig = c.rsplit(".", 1)
+    if _sign(b64) != sig:
         return None
     try:
-        raw = base64.urlsafe_b64decode(cookie + "=")
+        raw = base64.urlsafe_b64decode(b64 + "=")
         return json.loads(raw)
     except Exception:
         return None
 
-# =========================
-# Models
-# =========================
-class QuestAction(BaseModel):
-    user_id: str
-    quest_id: int
+# ========= Utilities =========
+def now_s() -> int:
+    return int(time.time())
 
-# =========================
-# OAuth
-# =========================
-@app.get("/api/login", summary="Oauth Login")
-async def oauth_login(redirect: str = Query("/quests.html")):
-    # carry the desired redirect in 'state'
-    state = quote(redirect, safe="")
+def to_bool_status(status: str) -> Dict[str, bool]:
+    s = (status or "not_accepted").lower()
+    return {
+        "accepted":  s in ("accepted", "in_progress", "completed", "claimed"),
+        "completed": s in ("completed", "claimed"),
+        "claimed":   s == "claimed",
+    }
+
+def user_total_xp(conn: sqlite3.Connection, user_id: str) -> int:
+    total = 0
+    # prefer user_xp_ledger if present
+    if table_exists(conn, "user_xp_ledger"):
+        total += conn.execute(
+            "SELECT COALESCE(SUM(amount),0) AS t FROM user_xp_ledger WHERE user_id=?",
+            (user_id,)
+        ).fetchone()[0] or 0
+    # fallback or additional legacy ledger
+    if table_exists(conn, "xp_ledger") and column_exists(conn, "xp_ledger", "discord_id"):
+        total += conn.execute(
+            "SELECT COALESCE(SUM(xp),0) AS t FROM xp_ledger WHERE discord_id=?",
+            (user_id,)
+        ).fetchone()[0] or 0
+    return int(total)
+
+def xp_to_level(total_xp: int) -> Dict[str, int]:
+    LEVEL_CAP = 1000
+    level = total_xp // LEVEL_CAP + 1
+    xp_in_level = total_xp % LEVEL_CAP
+    return dict(level=level, xp_in_level=xp_in_level, level_cap=LEVEL_CAP)
+
+# ========= Startup =========
+@app.on_event("startup")
+def _startup() -> None:
+    ensure_min_schema()
+
+# ========= Debug / Health =========
+@app.get("/api/debug/ping")
+def ping() -> Dict[str, Any]:
+    return {"ok": True, "t": now_s()}
+
+@app.get("/api/debug/dbcheck")
+def dbcheck() -> Dict[str, Any]:
+    conn = db()
+    try:
+        tables = []
+        for r in conn.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name;"):
+            tables.append({"name": r["name"], "sql": r["sql"]})
+        qcount = conn.execute("SELECT COUNT(*) FROM quests;").fetchone()[0]
+        return {"db_path": DB_PATH, "tables": tables, "quest_count": qcount}
+    finally:
+        conn.close()
+
+# ========= OAuth =========
+@app.get("/api/login")
+def oauth_login(redirect: str = "/quests.html"):
+    state = redirect  # you can HMAC this if you want, but keeping it simple
     q = {
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
@@ -165,8 +221,11 @@ async def oauth_login(redirect: str = Query("/quests.html")):
     }
     return RedirectResponse(OAUTH_AUTHORIZE + "?" + urlencode(q))
 
-@app.get("/api/callback", summary="Oauth Callback")
-async def oauth_callback(request: Request, code: str, state: str | None = None):
+@app.get("/api/callback")
+async def oauth_callback(request: Request, code: str, state: str = "/quests.html"):
+    if not CLIENT_ID or not CLIENT_SECRET:
+        raise HTTPException(500, "OAuth not configured")
+
     async with httpx.AsyncClient() as http:
         data = {
             "client_id": CLIENT_ID,
@@ -176,304 +235,195 @@ async def oauth_callback(request: Request, code: str, state: str | None = None):
             "redirect_uri": REDIRECT_URI,
         }
         tok = (await http.post(
-            OAUTH_TOKEN, data=data,
+            OAUTH_TOKEN,
+            data=data,
             headers={"Content-Type":"application/x-www-form-urlencoded"}
         )).json()
         if "access_token" not in tok:
             raise HTTPException(400, "oauth exchange failed")
-        me = (await http.get(ME_ENDPOINT, headers={"Authorization": f"Bearer {tok['access_token']}"})).json()
 
-    # ensure user record exists (users table seen in your DB)
-    conn = connect()
-    cur  = conn.cursor()
-    now  = int(time.time())
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-          discord_id TEXT PRIMARY KEY,
-          username   TEXT,
-          avatar     TEXT,
-          created_at INTEGER,
-          updated_at INTEGER
-        )
-    """)
-    cur.execute("""
-        INSERT INTO users(discord_id, username, avatar, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(discord_id) DO UPDATE SET
-          username=excluded.username,
-          avatar=excluded.avatar,
-          updated_at=excluded.updated_at
-    """, (me["id"], me.get("username"), me.get("avatar"), now, now))
-    conn.commit()
-    conn.close()
+        me = (await http.get(
+            ME_ENDPOINT,
+            headers={"Authorization": f"Bearer {tok['access_token']}"}
+        )).json()
 
-    dest = unquote(state) if state else "/quests.html"
-    resp = RedirectResponse(url=f"{SITE_ORIGIN}{dest}")
-    set_session(resp, {"discord_id": me["id"], "username": me.get("username"), "avatar": me.get("avatar")})
+    # upsert users
+    conn = db()
+    try:
+        conn.execute("""
+            INSERT INTO users(discord_id, username, avatar, created_at, updated_at)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(discord_id) DO UPDATE SET
+              username=excluded.username,
+              avatar=excluded.avatar,
+              updated_at=excluded.updated_at
+        """, (me["id"], me.get("username"), me.get("avatar"), now_s(), now_s()))
+        conn.commit()
+    finally:
+        conn.close()
+
+    # set session cookie
+    resp = RedirectResponse(url=f"{SITE_ORIGIN}{state}")
+    set_session(resp, {
+        "discord_id": me["id"],
+        "username": me.get("username"),
+        "avatar": me.get("avatar"),
+    })
     return resp
 
 @app.get("/api/logout")
-async def logout():
-    resp = RedirectResponse(url=SITE_ORIGIN)
+def logout(redirect: str = "/login.html"):
+    resp = RedirectResponse(url=f"{SITE_ORIGIN}{redirect}")
     resp.delete_cookie("sess")
     return resp
 
-# =========================
-# Me / Summary
-# =========================
+# ========= Auth / Session =========
 @app.get("/api/me")
-async def me(request: Request):
+def me(request: Request):
     sess = get_session(request)
     if not sess:
-        return {"authenticated": False}
-    # Build avatar URL if present
-    avatar_url = None
-    if sess.get("avatar"):
-        avatar_url = f"https://cdn.discordapp.com/avatars/{sess['discord_id']}/{sess['avatar']}.png"
+        return {"auth": False}
     return {
-        "authenticated": True,
-        "user": {
-            "id": sess["discord_id"],
-            "name": sess.get("username"),
-            "avatar": avatar_url
-        }
+        "auth": True,
+        "discord_id": sess["discord_id"],
+        "username": sess.get("username"),
+        "avatar": sess.get("avatar"),
     }
 
-def level_summary(user_id: str) -> dict:
-    """
-    Level math derived from user_xp_ledger (present in your DB).
-    1000 XP per level.
-    """
-    conn = connect()
-    cur  = conn.cursor()
-    cur.execute("CREATE TABLE IF NOT EXISTS user_xp_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, amount INTEGER NOT NULL, reason TEXT, ts INTEGER DEFAULT (strftime('%s','now')))")  # safety
-    cur.execute("SELECT COALESCE(SUM(amount),0) as total FROM user_xp_ledger WHERE user_id=?", (user_id,))
-    total = int((cur.fetchone() or {"total": 0})["total"] or 0)
-    conn.close()
-
-    level_cap = 1000
-    level = (total // level_cap) + 1
-    xp_in_level = total % level_cap
-    return {
-        "level": level,
-        "total_xp": total,
-        "xp_in_level": xp_in_level,
-        "level_cap": level_cap,
-        "progress_pct": round(100 * xp_in_level / level_cap) if level_cap else 0
-    }
-
+# ========= Summary / Quests =========
 @app.get("/api/summary")
-async def summary(user_id: str = Query(...)):
-    return level_summary(user_id)
+def summary(user_id: str):
+    """
+    user_id is the Discord ID (string). Frontend already sends that.
+    """
+    conn = db()
+    try:
+        total = user_total_xp(conn, user_id)
+        lvl = xp_to_level(total)
+        return {
+            "level": lvl["level"],
+            "total_xp": total,
+            "xp_in_level": lvl["xp_in_level"],
+            "level_cap": lvl["level_cap"],
+            "progress_pct": round(100 * lvl["xp_in_level"] / max(1, lvl["level_cap"]))
+        }
+    finally:
+        conn.close()
 
-# =========================
-# Quests: list + actions (schema-compatible with user_quests)
-# =========================
 @app.get("/api/quests")
-async def list_quests(request: Request, scope: str = "all"):
+def list_quests(request: Request, scope: str = "all"):
     """
-    Returns an ARRAY of quests with booleans derived from user_quests'
-    accepted_at/completed_at/claimed_at/status/progress fields.
+    Returns quests. If user is logged in, merges their status from user_quests.status.
     """
-    seed_quests_if_missing()
-
     sess = get_session(request)
     user_id = sess["discord_id"] if sess else None
 
-    conn = connect()
-    cur  = conn.cursor()
+    conn = db()
+    try:
+        if scope == "all":
+            rows = conn.execute("SELECT id, slug, title, descr, scope, goal, xp FROM quests WHERE active=1 ORDER BY id;").fetchall()
+        else:
+            rows = conn.execute("SELECT id, slug, title, descr, scope, goal, xp FROM quests WHERE active=1 AND scope=? ORDER BY id;", (scope,)).fetchall()
 
-    # Ensure user_quests exists the way your DB has it:
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS user_quests (
-            user_id      TEXT NOT NULL,
-            quest_id     INTEGER NOT NULL,
-            accepted_at  INTEGER,
-            progress     INTEGER DEFAULT 0,
-            completed_at INTEGER,
-            claimed_at   INTEGER,
-            status       TEXT DEFAULT 'not_accepted',
-            PRIMARY KEY (user_id, quest_id),
-            FOREIGN KEY (quest_id) REFERENCES quests(id)
-        )
-    """)
+        status_map: Dict[int, Dict[str, Any]] = {}
+        if user_id and table_exists(conn, "user_quests"):
+            uq_rows = conn.execute("SELECT quest_id, status, progress FROM user_quests WHERE user_id=?;", (user_id,)).fetchall()
+            for r in uq_rows:
+                status_map[int(r["quest_id"])] = {
+                    "status": r["status"],
+                    "progress": r["progress"] or 0
+                }
 
-    # Get quests
-    if scope == "all":
-        cur.execute("SELECT id,title,descr,scope,goal,xp FROM quests WHERE active=1 ORDER BY id")
-    else:
-        cur.execute("SELECT id,title,descr,scope,goal,xp FROM quests WHERE active=1 AND scope=? ORDER BY id", (scope,))
-    qrows = cur.fetchall()
-
-    # Map user progress if authed
-    uq_map = {}
-    if user_id:
-        cur.execute(
-            "SELECT quest_id, accepted_at, completed_at, claimed_at, status, progress "
-            "FROM user_quests WHERE user_id=?",
-            (user_id,),
-        )
-        for r in cur.fetchall():
-            qid = r["quest_id"]
-            accepted  = bool(r["accepted_at"]) or (r["status"] in ("accepted", "complete", "claimed"))
-            completed = bool(r["completed_at"]) or (r["status"] in ("complete", "claimed"))
-            claimed   = bool(r["claimed_at"]) or (r["status"] == "claimed")
-            uq_map[qid] = {
-                "accepted": accepted,
-                "completed": completed,
-                "claimed": claimed,
-                "progress": int(r["progress"] or 0),
-            }
-
-    out = []
-    for r in qrows:
-        qid  = r["id"]
-        goal = int(r["goal"] or 0)
-        u    = uq_map.get(qid, {"accepted": False, "completed": False, "claimed": False, "progress": 0})
-
-        # For single-step quests, "accepted" can imply completion if goal==1 and progress logic says so.
-        completed = u["completed"] or (goal == 1 and u["accepted"])
-
-        out.append({
-            "id": qid,
-            "title": r["title"],
-            "descr": r["descr"],
-            "scope": r["scope"],
-            "goal": goal,
-            "xp": int(r["xp"] or 0),
-            "accepted": u["accepted"],
-            "completed": completed,
-            "claimed": u["claimed"],
-            "progress": u["progress"] if goal > 1 else (1 if completed else 0),
-        })
-
-    conn.close()
-    return out
+        out = []
+        for r in rows:
+            qid = int(r["id"])
+            st_row = status_map.get(qid, {"status": "not_accepted", "progress": 0})
+            flags = to_bool_status(st_row["status"])
+            out.append({
+                "id": qid,
+                "title": r["title"],
+                "descr": r["descr"],
+                "scope": r["scope"],
+                "goal": r["goal"],
+                "xp": r["xp"],
+                "accepted": flags["accepted"],
+                "completed": flags["completed"],
+                "claimed": flags["claimed"],
+                "progress": st_row["progress"],
+            })
+        return out
+    finally:
+        conn.close()
 
 @app.post("/api/user/quests/accept")
-async def accept(body: QuestAction = Body(...)):
-    """
-    Upsert into user_quests using accepted_at + status (no accepted/completed/claimed boolean columns).
-    """
-    now = int(time.time())
-    conn = connect()
-    cur  = conn.cursor()
+async def accept_quest(request: Request):
+    body = await request.json()
+    user_id = str(body.get("user_id") or "").strip()
+    quest_id = int(body.get("quest_id"))
 
-    # Ensure quest exists
-    cur.execute("SELECT 1 FROM quests WHERE id=?", (body.quest_id,))
-    if not cur.fetchone():
+    if not user_id:
+        raise HTTPException(401, "not logged in")
+
+    conn = db()
+    try:
+        # Insert or bump to accepted if not already
+        conn.execute("""
+            INSERT INTO user_quests(user_id, quest_id, accepted_at, status, progress)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(user_id, quest_id) DO UPDATE SET
+              status='accepted',
+              accepted_at=COALESCE(user_quests.accepted_at, excluded.accepted_at)
+        """, (user_id, quest_id, now_s(), "accepted", 0))
+        conn.commit()
+        return {"ok": True}
+    finally:
         conn.close()
-        raise HTTPException(400, "Unknown quest")
-
-    # Ensure table exists (safety)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS user_quests (
-            user_id      TEXT NOT NULL,
-            quest_id     INTEGER NOT NULL,
-            accepted_at  INTEGER,
-            progress     INTEGER DEFAULT 0,
-            completed_at INTEGER,
-            claimed_at   INTEGER,
-            status       TEXT DEFAULT 'not_accepted',
-            PRIMARY KEY (user_id, quest_id),
-            FOREIGN KEY (quest_id) REFERENCES quests(id)
-        )
-    """)
-
-    # Upsert acceptance
-    cur.execute(
-        "INSERT INTO user_quests (user_id, quest_id, accepted_at, status, progress) "
-        "VALUES (?, ?, ?, 'accepted', 0) "
-        "ON CONFLICT(user_id, quest_id) DO UPDATE SET "
-        "  accepted_at = COALESCE(user_quests.accepted_at, excluded.accepted_at), "
-        "  status = CASE WHEN user_quests.status IN ('claimed','complete') "
-        "                THEN user_quests.status ELSE 'accepted' END",
-        (body.user_id, body.quest_id, now),
-    )
-    conn.commit()
-    conn.close()
-    return {"ok": True}
 
 @app.post("/api/user/quests/claim")
-async def claim(body: QuestAction = Body(...)):
-    """
-    Validate accepted, ensure not already claimed, write ledger, and mark claimed/completed/status.
-    """
-    now = int(time.time())
-    conn = connect()
-    cur  = conn.cursor()
+async def claim_quest(request: Request):
+    body = await request.json()
+    user_id = str(body.get("user_id") or "").strip()
+    quest_id = int(body.get("quest_id"))
 
-    # Check acceptance
-    cur.execute(
-        "SELECT accepted_at, completed_at, claimed_at, status, progress "
-        "FROM user_quests WHERE user_id=? AND quest_id=?",
-        (body.user_id, body.quest_id),
-    )
-    row = cur.fetchone()
-    if not row or not row["accepted_at"]:
+    if not user_id:
+        raise HTTPException(401, "not logged in")
+
+    conn = db()
+    try:
+        # Mark as claimed if currently completed or accepted
+        conn.execute("""
+            INSERT INTO user_quests(user_id, quest_id, accepted_at, status, progress, completed_at, claimed_at)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(user_id, quest_id) DO UPDATE SET
+              status='claimed',
+              completed_at=COALESCE(user_quests.completed_at, excluded.completed_at),
+              claimed_at=excluded.claimed_at
+        """, (user_id, quest_id, now_s(), "claimed", 0, now_s(), now_s()))
+
+        # Credit XP
+        xp_row = conn.execute("SELECT xp FROM quests WHERE id=?;", (quest_id,)).fetchone()
+        xp = int(xp_row["xp"]) if xp_row and xp_row["xp"] is not None else 0
+        if xp:
+            conn.execute("INSERT INTO user_xp_ledger(user_id, amount, reason, ts) VALUES (?,?,?,?)",
+                         (user_id, xp, f"claim:{quest_id}", now_s()))
+        conn.commit()
+        return {"ok": True, "granted": xp}
+    finally:
         conn.close()
-        raise HTTPException(400, "Quest not accepted")
-    if row["claimed_at"]:
-        conn.close()
-        raise HTTPException(400, "Already claimed")
-
-    # XP from quest
-    cur.execute("SELECT xp FROM quests WHERE id=?", (body.quest_id,))
-    r = cur.fetchone()
-    if not r:
-        conn.close()
-        raise HTTPException(400, "Unknown quest")
-    xp = int(r["xp"] or 0)
-
-    # Mark claimed/completed
-    cur.execute(
-        "UPDATE user_quests SET claimed_at=?, completed_at=COALESCE(completed_at, ?), status='claimed' "
-        "WHERE user_id=? AND quest_id=?",
-        (now, now, body.user_id, body.quest_id),
-    )
-
-    # Ledger entry
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS user_xp_ledger (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            amount INTEGER NOT NULL,
-            reason TEXT,
-            ts INTEGER DEFAULT (strftime('%s','now'))
-        )
-    """)
-    cur.execute(
-        "INSERT INTO user_xp_ledger (user_id, amount, reason, ts) VALUES (?, ?, ?, ?)",
-        (body.user_id, xp, f"claim:{body.quest_id}", now),
-    )
-
-    conn.commit()
-    conn.close()
-    return {"ok": True, "granted": xp, "summary": level_summary(body.user_id)}
 
 @app.post("/api/user/quests/discard")
-async def discard(body: QuestAction = Body(...)):
-    conn = connect()
-    cur  = conn.cursor()
-    cur.execute("DELETE FROM user_quests WHERE user_id=? AND quest_id=?", (body.user_id, body.quest_id))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
+async def discard_quest(request: Request):
+    body = await request.json()
+    user_id = str(body.get("user_id") or "").strip()
+    quest_id = int(body.get("quest_id"))
 
-# =========================
-# Debug helpers
-# =========================
-@app.get("/api/debug/dbcheck")
-def dbcheck():
-    conn = connect()
-    cur  = conn.cursor()
-    cur.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name")
-    tables = [{"name": r["name"], "sql": r["sql"]} for r in cur.fetchall()]
-    # Count quests
+    if not user_id:
+        raise HTTPException(401, "not logged in")
+
+    conn = db()
     try:
-        cur.execute("SELECT COUNT(*) AS c FROM quests")
-        quest_count = int(cur.fetchone()["c"])
-    except Exception:
-        quest_count = 0
-    conn.close()
-    return {"db_path": DB_PATH, "tables": tables, "quest_count": quest_count}
+        conn.execute("DELETE FROM user_quests WHERE user_id=? AND quest_id=?", (user_id, quest_id))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
