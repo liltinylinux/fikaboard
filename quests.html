@@ -1,3 +1,17 @@
+<script>
+const API_BASE = '/xp/api';
+async function requireAuthOrRedirect() {
+  try {
+    const r = await fetch(API_BASE + '/me', {credentials:'include'});
+    const me = await r.json();
+    if (!me || me.auth !== true) location.href = '/login.html';
+  } catch {
+    location.href = '/login.html';
+  }
+}
+requireAuthOrRedirect();
+</script>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
