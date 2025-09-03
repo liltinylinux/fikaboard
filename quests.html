@@ -1,17 +1,3 @@
-<script>
-const API_BASE = '/xp/api';
-async function requireAuthOrRedirect() {
-  try {
-    const r = await fetch(API_BASE + '/me', {credentials:'include'});
-    const me = await r.json();
-    if (!me || me.auth !== true) location.href = '/login.html';
-  } catch {
-    location.href = '/login.html';
-  }
-}
-requireAuthOrRedirect();
-</script>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -63,8 +49,7 @@ requireAuthOrRedirect();
   .disc-btn{display:inline-flex;align-items:center;gap:10px;background:var(--disc);
             border:0;color:#fff;padding:12px 18px;border-radius:10px;font-weight:700;cursor:pointer}
   .disc-btn svg{width:20px;height:20px;fill:#fff}
-  .banner{margin:12px 0;padding:10px;border:1px dashed #3b4a60;
-          border-radius:12px;background:#0c1219;color:#b8c7db}
+  .banner{margin:12px 0;padding:10px;border:1px dashed #3b4a60;border-radius:12px;background:#0c1219;color:#b8c7db}
 </style>
 </head>
 <body>
@@ -84,8 +69,8 @@ requireAuthOrRedirect();
         <p class="muted">Sign in with Discord to track progress and claim XP.</p>
         <button id="login-btn" class="disc-btn" aria-label="Sign in with Discord">
           <svg viewBox="0 0 245 240" aria-hidden="true">
-            <path d="M104.4 105.7c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1 0.1-6.1-4.5-11.1-10.2-11.1zm36.2 0c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1s-4.5-11.1-10.2-11.1z"/>
-            <path d="M189.5 20h-134C32.9 20 15 37.9 15 59.7v120.6C15 202.1 32.9 220 55.5 220h113.3l-5.3-18.5 12.8 11.9 12.1 11.2 21.2 18.4V59.7c0-21.8-17.9-39.7-40.1-39.7zm-38.6 135.1s-3.6-4.3-6.6-8.1c13.1-3.7 18.1-11.9 18.1-11.9-4.1 2.7-8 4.6-11.5 5.9-5 2.1-9.8 3.4-14.5 4.2-9.6 1.8-18.4 1.3-25.9-0.1-5.7-1.1-10.6-2.6-14.7-4.2-2.3-0.9-4.8-2-7.3-3.4-0.3-0.2-0.5-0.3-0.8-0.4-0.2-0.1-0.3-0.2-0.4-0.2-1.8-1-2.8-1.7-2.8-1.7s4.8 8 17.5 11.8c-3 3.8-6.7 8.2-6.7 8.2-22.1-0.7-30.5-15.2-30.5-15.2 0-32.1 14.4-58.1 14.4-58.1 14.4-10.8 28.1-10.5 28.1-10.5l1 1.2c-18 5.2-26.3 13.1-26.3 13.1s2.2-1.2 5.9-2.8c10.7-4.7 19.1-5.9 22.5-6.2 0.6-0.1 1.1-0.2 1.7-0.2 6.1-0.8 13-1 20.2-0.2 9.5 1.1 19.6 3.9 29.9 9.6 0 0-7.9-7.5-24.9-12.7l1.4-1.6s13.7-0.4 28.1 10.5c0 0 14.4 26 14.4 58.1 0.1 0-8.3 14.5-30.4 15.2z"/>
+            <path d="M104.4 105.7c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1 0.1-6.1-4.5-11.1-10.2-11.1zm36.2 0c-5.7 0-10.2 5-10.2 11.1s4.6 11.1 10.2 11.1c5.7 0 10.2-5 10.2-11.1s-4.5-11.1-10.2-11.1z"></path>
+            <path d="M189.5 20h-134C32.9 20 15 37.9 15 59.7v120.6C15 202.1 32.9 220 55.5 220h113.3l-5.3-18.5 12.8 11.9 12.1 11.2 21.2 18.4V59.7c0-21.8-17.9-39.7-40.1-39.7zm-38.6 135.1s-3.6-4.3-6.6-8.1c13.1-3.7 18.1-11.9 18.1-11.9-4.1 2.7-8 4.6-11.5 5.9-5 2.1-9.8 3.4-14.5 4.2-9.6 1.8-18.4 1.3-25.9-0.1-5.7-1.1-10.6-2.6-14.7-4.2-2.3-0.9-4.8-2-7.3-3.4-0.3-0.2-0.5-0.3-0.8-0.4-0.2-0.1-0.3-0.2-0.4-0.2-1.8-1-2.8-1.7-2.8-1.7s4.8 8 17.5 11.8c-3 3.8-6.7 8.2-6.7 8.2-22.1-0.7-30.5-15.2-30.5-15.2 0-32.1 14.4-58.1 14.4-58.1 14.4-10.8 28.1-10.5 28.1-10.5l1 1.2c-18 5.2-26.3 13.1-26.3 13.1s2.2-1.2 5.9-2.8c10.7-4.7 19.1-5.9 22.5-6.2 0.6-0.1 1.1-0.2 1.7-0.2 6.1-0.8 13-1 20.2-0.2 9.5 1.1 19.6 3.9 29.9 9.6 0 0-7.9-7.5-24.9-12.7l1.4-1.6s13.7-0.4 28.1 10.5c0 0 14.4 26 14.4 58.1 0.1 0-8.3 14.5-30.4 15.2z"></path>
           </svg>
           Sign in with Discord
         </button>
@@ -119,13 +104,13 @@ requireAuthOrRedirect();
   </div>
 
 <script>
-/* -------- Config (matches your nginx) -------- */
+/* -------- Config (matches nginx) -------- */
 const API_BASE = '/xp/api';
-const DEV_MODE = false; // turn on only if you want the Tiny Keef fallback
+const DEV_MODE = false;              // <— keep false in prod
 const DEV_USER_ID = '344568707294429185';
 const REDIRECT_AFTER_LOGIN = '/quests.html';
 
-/* -------- tiny helpers -------- */
+/* -------- HTTP helpers -------- */
 async function apiGet(path){
   const r = await fetch(API_BASE+path,{credentials:'include'});
   if(!r.ok) throw new Error(r.status+' '+r.statusText);
@@ -133,11 +118,16 @@ async function apiGet(path){
 }
 async function apiPost(path,body){
   const r=await fetch(API_BASE+path,{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    credentials:'include',body:body?JSON.stringify(body):null});
-  if(!r.ok){let m=r.status+' '+r.statusText;
-    try{const j=await r.json();if(j.detail)m=j.detail;}catch{}
-    throw new Error(m);}
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    credentials:'include',
+    body:body?JSON.stringify(body):null
+  });
+  if(!r.ok){
+    let m=r.status+' '+r.statusText;
+    try{const j=await r.json(); if(j.detail) m=j.detail;}catch{}
+    throw new Error(m);
+  }
   try{return await r.json();}catch{return {};}
 }
 function login(redir=REDIRECT_AFTER_LOGIN){ location.href=API_BASE+'/login?redirect='+encodeURIComponent(redir); }
@@ -163,20 +153,15 @@ document.querySelectorAll('.tab').forEach(btn=>{
   };
 });
 
-/* -------- session handling (normalizes /api/me shape) -------- */
+/* -------- session handling -------- */
 let SESSION={authenticated:false,user:null};
 
 function normalizeMe(me){
-  // Shape A (recommended backend): { auth: true, discord_id, username, avatar }
-  if (me && me.auth===true && me.discord_id){
+  if(me && me.auth===true && me.discord_id){
     const avatar = me.avatar
       ? `https://cdn.discordapp.com/avatars/${me.discord_id}/${me.avatar}.png`
       : null;
     return { authenticated:true, user:{ id:String(me.discord_id), name:me.username||'User', avatar } };
-  }
-  // Shape B (alternative): { authenticated: true, user: { id, name, avatar } }
-  if (me && me.authenticated===true && me.user && me.user.id){
-    return { authenticated:true, user:{ id:String(me.user.id), name:me.user.name||'User', avatar:me.user.avatar||null } };
   }
   return { authenticated:false, user:null };
 }
@@ -204,7 +189,7 @@ async function loadMe(){
   }else{
     elAuthed.style.display='none';
     elHero.style.display='';
-    elDevBanner.style.display=DEV_MODE?'':'none';
+    elDevBanner.style.display = DEV_MODE ? '' : 'none';
   }
 }
 
@@ -212,7 +197,7 @@ function renderUserSlot(){
   if(SESSION.authenticated && SESSION.user){
     const u=SESSION.user, av=u.avatar||'https://cdn.discordapp.com/embed/avatars/1.png';
     elUserSlot.innerHTML=`<span class="pill"><img class="avatar" src="${av}" alt="">
-      <span>${u.name}</span><button class="btn" id="logout">Logout</button></span>`;
+      <span>${escapeHTML(u.name)}</span><button class="btn" id="logout">Logout</button></span>`;
     document.getElementById('logout').onclick=()=>logout();
   }else if(DEV_MODE){
     elUserSlot.innerHTML=`<span class="pill"><img class="avatar" src="https://cdn.discordapp.com/embed/avatars/2.png" alt="">
@@ -245,7 +230,7 @@ async function loadQuests(scope){
     if(!list.length){ elQuestList.innerHTML='<div class="muted">No '+scope+' quests.</div>'; return; }
     list.forEach(q=>elQuestList.appendChild(renderQuest(q)));
   }catch(e){
-    elQuestList.innerHTML='<div class="muted">Failed to load quests: '+escapeHTML(e.message)+'</div>';
+    elQuestList.innerHTML='<div class="muted">Failed to load quests: '+e.message+'</div>';
   }
 }
 
@@ -269,10 +254,8 @@ function renderQuest(q){
 }
 async function questAction(endpoint,uid,qid){
   if(!uid) return alert('Please sign in.');
-  try{
-    await apiPost(endpoint,{user_id:String(uid),quest_id:String(qid)});
-    await reloadUI();
-  }catch(e){ alert(e.message); }
+  try{ await apiPost(endpoint,{user_id:String(uid),quest_id:Number(qid)}); await reloadUI(); }
+  catch(e){ alert(e.message); }
 }
 
 async function reloadUI(){
